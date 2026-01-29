@@ -1,0 +1,62 @@
+#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+#import <mach/mach.h>
+#import <mach-o/dyld.h>
+#import <sys/mman.h>
+
+// --- دالة تمويه لجلب القاعدة ---
+uintptr_t get_module_base(const char *module_name) {
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && strstr(name, module_name)) {
+            return (uintptr_t)_dyld_get_image_header(i);
+        }
+    }
+    return 0;
+}
+
+// --- دالة الكتابة الصامتة (بدون بصمات) ---
+void apply_core_patch(uintptr_t target_addr, const void* data, size_t size) {
+    if (!target_addr) return;
+    
+    vm_address_t page_start = target_addr & ~0xFFF;
+    vm_size_t page_size = 0x1000;
+
+    // فتح الصلاحيات
+    if (vm_protect(mach_task_self(), page_start, page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
+        memcpy((void*)target_addr, data, size);
+        // إعادة الصلاحيات فوراً للتمويه
+        vm_protect(mach_task_self(), page_start, page_size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    }
+}
+
+// --- تنفيذ التعديلات بأسماء مموهة ---
+void internal_security_update() {
+    uintptr_t base = get_module_base("UnityFramework");
+    if (!base) return;
+
+    // 1. ثبات السلاح (No Recoil)
+    apply_core_patch(base + 0x1E5B2C4, "\x1F\x20\x03\xD5", 4);
+
+    // 2. منظار واسع (iPad View)
+    apply_core_patch(base + 0x1C8D4F0, "\x00\x00\xA0\x42", 4);
+
+    // 3. أيم بوت ناعم (Smooth Aim)
+    apply_core_patch(base + 0x21A4D80, "\x20\x00\x80\xD2\xC0\x03\x5F\xD6", 8);
+}
+
+// --- إخفاء تسجيل الشاشة (بدون جيلبريك) ---
+%hook UIScreen
+- (BOOL)isCaptured {
+    return NO; 
+}
+%end
+
+// --- نقطة انطلاق الهاك الصامت ---
+%ctor {
+    // تأخير الحقن 12 ثانية لتخطي فحص اللوبي (أكثر أماناً)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        internal_security_update();
+    });
+}
